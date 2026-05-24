@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StudyShrk - Study Together</title>
+    <title>StudyShrk - Room Hosting & Video Calling</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -16,28 +16,18 @@
             height: 100%;
             margin: 0;
             padding: 0;
-            background-color: #0f172a;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background-color: #000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
         }
-        .fade-in { animation: fadeIn 0.3s ease-in; }
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
+        .chat-message {
+            animation: slideIn 0.3s ease-in;
         }
-        .timer-display {
-            font-variant-numeric: tabular-nums;
-            font-size: 3rem;
-            font-weight: bold;
-            color: #06b6d4;
-            font-family: 'Monaco', 'Courier New', monospace;
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-        .pulse-active { animation: pulse 2s infinite; }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-        input, textarea { transition: border-color 0.2s; }
-        input:focus, textarea:focus { outline: none; border-color: #06b6d4; }
+        button:active { transform: scale(0.98); }
+        input:focus { outline: none; }
     </style>
 </head>
 <body>
@@ -45,158 +35,24 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        const getSocketUrl = () => {
-            const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-            return protocol + '//localhost:4000';
-        };
-
-        const socket = io(getSocketUrl(), {
+        const socket = io('http://localhost:4000', {
             reconnection: true,
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
             reconnectionAttempts: 5
         });
 
-        function FocusTimer() {
-            const [timeLeft, setTimeLeft] = useState(25 * 60);
-            const [isRunning, setIsRunning] = useState(false);
-            const [sessionType, setSessionType] = useState('work');
-            const timerRef = useRef(null);
-
-            useEffect(() => {
-                if (!isRunning) return;
-                
-                timerRef.current = setInterval(() => {
-                    setTimeLeft(prev => {
-                        if (prev <= 1) {
-                            setIsRunning(false);
-                            new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAAB9AAACABAAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj==').play();
-                            return sessionType === 'work' ? 5 * 60 : 25 * 60;
-                        }
-                        return prev - 1;
-                    });
-                }, 1000);
-                
-                return () => clearInterval(timerRef.current);
-            }, [isRunning, sessionType]);
-
-            const formatTime = (seconds) => {
-                const mins = Math.floor(seconds / 60);
-                const secs = seconds % 60;
-                return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-            };
-
-            const toggleSession = () => {
-                setSessionType(sessionType === 'work' ? 'break' : 'work');
-                setTimeLeft(sessionType === 'work' ? 5 * 60 : 25 * 60);
-                setIsRunning(false);
-            };
-
-            return (
-                <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700">
-                    <h2 className="text-white font-bold mb-4 flex items-center gap-2">
-                        <span className="text-2xl">⏱️</span>
-                        Focus Timer
-                    </h2>
-                    <div className="text-center mb-6">
-                        <div className={`timer-display ${isRunning ? 'pulse-active' : ''}`}>
-                            {formatTime(timeLeft)}
-                        </div>
-                        <p className="text-slate-400 text-sm mt-2 capitalize">
-                            {sessionType === 'work' ? '🎯 Focus Session' : '☕ Break Time'}
-                        </p>
-                    </div>
-                    <div className="flex gap-2 mb-4">
-                        <button
-                            onClick={() => setIsRunning(!isRunning)}
-                            className={`flex-1 py-2 rounded-lg font-bold transition ${
-                                isRunning ? 'bg-red-600 hover:bg-red-700' : 'bg-cyan-600 hover:bg-cyan-700'
-                            } text-white`}
-                        >
-                            {isRunning ? '⏸ Pause' : '▶ Start'}
-                        </button>
-                        <button
-                            onClick={toggleSession}
-                            className="flex-1 py-2 rounded-lg font-bold bg-slate-700 hover:bg-slate-600 text-white transition"
-                        >
-                            Switch
-                        </button>
-                    </div>
-                </div>
-            );
-        }
-
-        function NotesPanel() {
-            const [note, setNote] = useState('');
-            const [savedNotes, setSavedNotes] = useState([]);
-            const [showSaved, setShowSaved] = useState(false);
-
-            const saveNote = () => {
-                if (!note.trim()) return;
-                setSavedNotes([...savedNotes, { id: Date.now(), text: note, time: new Date().toLocaleTimeString() }]);
-                setNote('');
-            };
-
-            const deleteNote = (id) => {
-                setSavedNotes(savedNotes.filter(n => n.id !== id));
-            };
-
-            return (
-                <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700">
-                    <h2 className="text-white font-bold mb-4 flex items-center gap-2">
-                        <span className="text-2xl">📝</span>
-                        Quick Notes
-                    </h2>
-                    <textarea
-                        value={note}
-                        onChange={(e) => setNote(e.target.value)}
-                        placeholder="Take notes during study session..."
-                        className="w-full h-24 bg-slate-700 text-white rounded-lg p-3 border border-slate-600 text-sm resize-none"
-                    />
-                    <div className="flex gap-2 mt-3">
-                        <button
-                            onClick={saveNote}
-                            className="flex-1 py-2 rounded-lg font-bold bg-cyan-600 hover:bg-cyan-700 text-white transition"
-                        >
-                            Save Note
-                        </button>
-                        <button
-                            onClick={() => setShowSaved(!showSaved)}
-                            className="flex-1 py-2 rounded-lg font-bold bg-slate-700 hover:bg-slate-600 text-white transition"
-                        >
-                            Saved ({savedNotes.length})
-                        </button>
-                    </div>
-                    
-                    {showSaved && savedNotes.length > 0 && (
-                        <div className="mt-4 space-y-2 max-h-32 overflow-auto">
-                            {savedNotes.map(n => (
-                                <div key={n.id} className="bg-slate-700 p-2 rounded text-sm text-slate-200 flex justify-between items-start">
-                                    <div>
-                                        <p>{n.text.substring(0, 50)}...</p>
-                                        <p className="text-xs text-slate-500">{n.time}</p>
-                                    </div>
-                                    <button
-                                        onClick={() => deleteNote(n.id)}
-                                        className="text-red-400 hover:text-red-300 text-xs"
-                                    >
-                                        ✕
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            );
-        }
-
         function ChatPanel({ socket }) {
             const [msg, setMsg] = useState('');
             const [messages, setMessages] = useState([]);
             const messagesEndRef = useRef(null);
 
-            useEffect(() => {
+            const scrollToBottom = () => {
                 messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            };
+
+            useEffect(() => {
+                scrollToBottom();
             }, [messages]);
 
             useEffect(() => {
@@ -214,48 +70,36 @@
             };
 
             const handleKeyPress = (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    send();
-                }
+                if (e.key === 'Enter') send();
             };
 
             return (
-                <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700 flex flex-col h-full">
-                    <h2 className="text-white font-bold mb-4 flex items-center gap-2">
-                        <span className="text-2xl">💬</span>
-                        Study Chat
-                    </h2>
-                    <div className="flex-1 overflow-auto mb-4 space-y-2">
-                        {messages.length === 0 ? (
-                            <p className="text-slate-500 text-sm text-center py-8">No messages yet. Start chatting!</p>
-                        ) : (
-                            messages.map((m, i) => (
-                                <div key={i} className={`flex ${m.sent ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`p-3 rounded-lg max-w-xs text-sm ${
-                                        m.sent ? 'bg-cyan-600 text-white' : 'bg-slate-700 text-slate-100'
-                                    }`}>
-                                        <p>{m.text}</p>
-                                        <p className={`text-xs mt-1 ${m.sent ? 'text-cyan-200' : 'text-slate-400'}`}>
-                                            {m.timestamp}
-                                        </p>
-                                    </div>
+                <div className="w-80 bg-zinc-900 border-l border-zinc-800 flex flex-col h-full">
+                    <div className="p-4 border-b border-zinc-800">
+                        <h3 className="text-white font-bold">Chat Room</h3>
+                    </div>
+                    <div className="flex-1 overflow-auto p-4 space-y-3">
+                        {messages.map((m, i) => (
+                            <div key={i} className="chat-message">
+                                <div className={`p-3 rounded-xl ${m.sent ? 'bg-cyan-600 ml-auto w-fit' : 'bg-zinc-800'}`}>
+                                    <p className="text-white text-sm break-words">{m.text}</p>
+                                    <p className="text-zinc-400 text-xs mt-1">{m.timestamp}</p>
                                 </div>
-                            ))
-                        )}
+                            </div>
+                        ))}
                         <div ref={messagesEndRef} />
                     </div>
-                    <div className="flex gap-2">
+                    <div className="p-3 border-t border-zinc-800 flex gap-2">
                         <input
                             value={msg}
                             onChange={(e) => setMsg(e.target.value)}
                             onKeyPress={handleKeyPress}
-                            placeholder="Message..."
-                            className="flex-1 bg-slate-700 text-white rounded-lg p-3 border border-slate-600 text-sm"
+                            className="flex-1 bg-zinc-800 p-3 rounded-xl text-white placeholder-zinc-500"
+                            placeholder="Type message..."
                         />
                         <button
                             onClick={send}
-                            className="bg-cyan-600 hover:bg-cyan-700 px-4 py-3 rounded-lg font-bold text-white transition"
+                            className="bg-cyan-500 hover:bg-cyan-600 px-5 py-3 rounded-xl font-bold text-white transition"
                         >
                             Send
                         </button>
@@ -264,32 +108,87 @@
             );
         }
 
-        function WorkspaceViewer({ state }) {
+        function MediaPanel({ socket, room }) {
+            const [url, setUrl] = useState('');
+
+            const detectType = (u) => {
+                if (u.includes('youtube.com') || u.includes('youtu.be')) return 'video';
+                if (u.endsWith('.pdf')) return 'pdf';
+                return 'website';
+            };
+
+            const load = () => {
+                if (!url.trim()) return;
+                socket.emit('workspace-load', { room, object: { type: detectType(url), url } });
+                setUrl('');
+            };
+
+            const handleKeyPress = (e) => {
+                if (e.key === 'Enter') load();
+            };
+
+            return (
+                <div className="bg-zinc-900 border-t border-zinc-800 p-4 flex gap-3">
+                    <input
+                        value={url}
+                        onChange={(e) => setUrl(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        placeholder="Paste website/YouTube/PDF link"
+                        className="flex-1 bg-zinc-800 rounded-xl p-3 text-white placeholder-zinc-500"
+                    />
+                    <button
+                        onClick={load}
+                        className="bg-cyan-500 hover:bg-cyan-600 px-6 py-3 rounded-xl font-bold text-white transition"
+                    >
+                        Load
+                    </button>
+                </div>
+            );
+        }
+
+        function RoomBar({ room, connected }) {
+            return (
+                <div className="h-16 border-b border-zinc-800 bg-zinc-950 flex items-center justify-between px-5">
+                    <div className="text-2xl font-bold text-cyan-500">🦈 StudyShrk</div>
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                            <span className="text-xs text-zinc-400">{connected ? 'Connected' : 'Disconnected'}</span>
+                        </div>
+                        <div className="bg-zinc-800 px-4 py-2 rounded-xl text-sm font-mono tracking-widest text-zinc-400">
+                            ROOM: <span className="text-white font-bold">{room}</span>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function Workspace({ state }) {
             const iframeRef = useRef();
             const videoRef = useRef();
 
             useEffect(() => {
                 if (!state?.current) return;
-                if (state.current.type === 'website' && iframeRef.current) {
+                if (state.current.type === 'website') {
                     iframeRef.current.src = state.current.url;
                 }
-                if (state.current.type === 'video' && videoRef.current) {
+                if (state.current.type === 'video') {
                     videoRef.current.src = state.current.url;
                 }
             }, [state]);
 
             if (!state?.current) {
                 return (
-                    <div className="flex items-center justify-center h-full flex-col text-slate-400">
-                        <p className="text-5xl mb-3">📚</p>
-                        <p className="text-lg">Study Workspace</p>
-                        <p className="text-sm mt-2">Content will appear here</p>
+                    <div className="flex-1 flex items-center justify-center flex-col text-zinc-500 bg-zinc-950">
+                        <p className="text-2xl mb-2">📚</p>
+                        <p className="text-lg">Empty Workspace</p>
+                        <p className="text-sm mt-2">Load a website, video, or PDF from below</p>
                     </div>
                 );
             }
 
             return (
-                <div className="w-full h-full bg-slate-950 rounded-lg overflow-hidden">
+                <div className="flex-1 relative overflow-hidden bg-zinc-950">
                     {state.current.type === 'website' && (
                         <iframe
                             ref={iframeRef}
@@ -308,60 +207,12 @@
             );
         }
 
-        function StreamPanel({ socket, room, onToggleStream }) {
-            const [url, setUrl] = useState('');
-
-            const detectType = (u) => {
-                if (u.includes('youtube.com') || u.includes('youtu.be')) return 'video';
-                if (u.endsWith('.pdf')) return 'pdf';
-                return 'website';
-            };
-
-            const load = () => {
-                if (!url.trim()) return;
-                socket.emit('workspace-load', { room, object: { type: detectType(url), url } });
-                setUrl('');
-            };
-
-            return (
-                <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700">
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-white font-bold flex items-center gap-2">
-                            <span className="text-2xl">🎥</span>
-                            Share Content
-                        </h2>
-                        <button
-                            onClick={onToggleStream}
-                            className="text-slate-400 hover:text-slate-300 text-xl"
-                        >
-                            ✕
-                        </button>
-                    </div>
-                    <div className="flex gap-2">
-                        <input
-                            value={url}
-                            onChange={(e) => setUrl(e.target.value)}
-                            placeholder="Paste link (website/YouTube/PDF)"
-                            className="flex-1 bg-slate-700 text-white rounded-lg p-3 border border-slate-600 text-sm"
-                        />
-                        <button
-                            onClick={load}
-                            className="bg-cyan-600 hover:bg-cyan-700 px-6 py-3 rounded-lg font-bold text-white transition"
-                        >
-                            Load
-                        </button>
-                    </div>
-                </div>
-            );
-        }
-
         function App() {
             const [room, setRoom] = useState('');
             const [joined, setJoined] = useState(false);
             const [name, setName] = useState('');
             const [state, setState] = useState(null);
             const [connected, setConnected] = useState(false);
-            const [showStream, setShowStream] = useState(false);
 
             useEffect(() => {
                 socket.on('connect', () => setConnected(true));
@@ -379,7 +230,7 @@
 
             const joinRoom = () => {
                 if (!room.trim() || !name.trim()) {
-                    alert('Please enter both name and study room');
+                    alert('Please enter both name and room code');
                     return;
                 }
                 socket.emit('join-room', { room, name });
@@ -392,17 +243,17 @@
 
             if (!joined) {
                 return (
-                    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-950 flex items-center justify-center p-6">
-                        <div className="w-full max-w-md bg-slate-800 rounded-3xl border border-slate-700 p-8 space-y-6">
+                    <div className="min-h-screen bg-black flex items-center justify-center p-6">
+                        <div className="w-full max-w-md bg-zinc-900 rounded-3xl border border-zinc-800 p-8 space-y-6">
                             <div className="text-center">
-                                <div className="text-6xl mb-3">🦈</div>
+                                <div className="text-5xl mb-3">🦈</div>
                                 <h1 className="text-4xl font-bold text-white">StudyShrk</h1>
-                                <p className="text-slate-400 text-sm mt-2">Study Together, Focus Better</p>
+                                <p className="text-zinc-400 text-sm mt-2">Room Hosting & Video Calling</p>
                             </div>
 
                             <div className="space-y-4">
                                 <input
-                                    className="w-full bg-slate-700 rounded-lg p-4 text-white placeholder-slate-500 border border-slate-600"
+                                    className="w-full bg-zinc-800 rounded-xl p-4 text-white placeholder-zinc-500 border border-zinc-700 focus:border-cyan-500 transition"
                                     placeholder="Your name"
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
@@ -410,22 +261,22 @@
                                     autoFocus
                                 />
                                 <input
-                                    className="w-full bg-slate-700 rounded-lg p-4 text-white placeholder-slate-500 border border-slate-600"
-                                    placeholder="Study room code"
+                                    className="w-full bg-zinc-800 rounded-xl p-4 text-white placeholder-zinc-500 border border-zinc-700 focus:border-cyan-500 transition"
+                                    placeholder="Room code"
                                     value={room}
                                     onChange={(e) => setRoom(e.target.value)}
                                     onKeyPress={handleKeyPress}
                                 />
                                 <button
                                     onClick={joinRoom}
-                                    className="w-full bg-cyan-600 hover:bg-cyan-700 text-white p-4 rounded-lg font-bold transition"
+                                    className="w-full bg-cyan-500 hover:bg-cyan-600 text-white p-4 rounded-xl font-bold transition"
                                 >
-                                    Join Study Session
+                                    Join Workspace
                                 </button>
                             </div>
 
-                            <div className={`text-center text-xs p-3 rounded-lg border ${connected ? 'bg-green-900/20 border-green-600 text-green-400' : 'bg-red-900/20 border-red-600 text-red-400'}`}>
-                                {connected ? '✓ Connected' : '✗ Connecting...'}
+                            <div className={`text-center text-xs p-3 rounded-lg ${connected ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
+                                {connected ? '✓ Connected to server' : '✗ Waiting for server (localhost:4000)'}
                             </div>
                         </div>
                     </div>
@@ -433,48 +284,13 @@
             }
 
             return (
-                <div className="min-h-screen bg-slate-900 p-6">
-                    <div className="max-w-7xl mx-auto">
-                        <div className="flex items-center justify-between mb-8">
-                            <div>
-                                <h1 className="text-3xl font-bold text-white">🦈 StudyShrk</h1>
-                                <p className="text-slate-400 text-sm">Room: <span className="text-cyan-400 font-mono">{room}</span> • User: <span className="text-cyan-400">{name}</span></p>
-                            </div>
-                            <button
-                                onClick={() => setShowStream(!showStream)}
-                                className={`px-6 py-3 rounded-lg font-bold transition ${
-                                    showStream ? 'bg-slate-700 text-slate-300' : 'bg-cyan-600 hover:bg-cyan-700 text-white'
-                                }`}
-                            >
-                                {showStream ? '✓ Stream' : '🎥 Share'}
-                            </button>
-                        </div>
-
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            {/* Left Panel - Study Features */}
-                            <div className="space-y-6">
-                                <FocusTimer />
-                                <NotesPanel />
-                            </div>
-
-                            {/* Center Panel - Chat and Workspace */}
-                            <div className="lg:col-span-2 space-y-6">
-                                <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700 h-96">
-                                    <h2 className="text-white font-bold mb-4">Study Workspace</h2>
-                                    <WorkspaceViewer state={state} />
-                                </div>
-
-                                <ChatPanel socket={socket} />
-                            </div>
-                        </div>
-
-                        {/* Stream Panel - Toggle Visible */}
-                        {showStream && (
-                            <div className="mt-6 fade-in">
-                                <StreamPanel socket={socket} room={room} onToggleStream={() => setShowStream(false)} />
-                            </div>
-                        )}
+                <div className="h-screen bg-black text-white flex flex-col overflow-hidden">
+                    <RoomBar room={room} connected={connected} />
+                    <div className="flex flex-1 overflow-hidden">
+                        <Workspace state={state} />
+                        <ChatPanel socket={socket} />
                     </div>
+                    <MediaPanel socket={socket} room={room} />
                 </div>
             );
         }
