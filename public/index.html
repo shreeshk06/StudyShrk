@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+ <meta charset="UTF-8" />
+ <meta name="viewport" content="width=device-width, initial-scale=1" />
+ <title>StreamShrk</title>
+ <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+ <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+ <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+ <style>
+ /* Add basic styling here */
+ body {
+ font-family: Arial, sans-serif;
+ }
+ .container {
+ max-width: 800px;
+ margin: auto;
+ padding: 20px;
+ }
+ </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+ const { useState } = React;
+
+ function App() {
+ const [url, setUrl] = useState('');
+
+ const handleLoadContent = async () => {
+ if (!url.trim()) return;
+
+ try {
+ // Use proxied URL here to avoid CORS issues
+ const response = await fetch(`/echovideo${url}`);
+ if (!response.ok) throw new Error('Failed to load content');
+ const data = await response.text();
+ console.log(data);
+ // Handle loaded data as needed (e.g., render iframe or video)
+ } catch (error) {
+ console.error('Error loading content:', error);
+ }
+ };
+
+ return (
+ <div className="container">
+ <input type="text" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="/path/to/resource" />
+ <button onClick={handleLoadContent}>Load Content</button>
+ </div>
+ );
+ }
+
+ ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+
+</body>
+</html>
