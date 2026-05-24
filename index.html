@@ -1,13 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StudyShrk - Room Hosting & Video Calling</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>StudyShrk - Study Together</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         * { box-sizing: border-box; }
@@ -17,285 +18,783 @@
             margin: 0;
             padding: 0;
             background-color: #000;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         }
-        .chat-message {
-            animation: slideIn 0.3s ease-in;
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
+        .drag-over {
+            background-color: rgba(6, 182, 212, 0.2) !important;
+            border-color: #06b6d4 !important;
+        }
+        .video-grid {
+            display: grid;
+            gap: 8px;
+            width: 100%;
+            height: 100%;
+        }
+        .video-grid.count-1 { grid-template-columns: 1fr; }
+        .video-grid.count-2 { grid-template-columns: repeat(2, 1fr); }
+        .video-grid.count-3 { grid-template-columns: repeat(2, 1fr); }
+        .video-grid.count-4 { grid-template-columns: repeat(2, 1fr); }
+        .video-grid.count-5, .video-grid.count-6 { grid-template-columns: repeat(3, 1fr); }
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            background: #1e293b;
+            border-radius: 12px;
+        }
+        .peer-video-container {
+            position: relative;
+            background: #1e293b;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .peer-name {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .controls-bar {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid #334155;
+            border-radius: 50px;
+            padding: 12px 24px;
+            display: flex;
+            gap: 12px;
+            z-index: 1000;
+        }
+        .control-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            transition: all 0.2s;
+        }
+        .control-btn:hover { transform: scale(1.1); }
+        .control-btn.active { background: #dc2626; }
+        .control-btn.sharing { background: #06b6d4; }
+        .chat-message { animation: slideIn 0.3s ease-out; }
         @keyframes slideIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        button:active { transform: scale(0.98); }
-        input:focus { outline: none; }
+        .slide-right {
+            animation: slideRight 0.3s ease-out;
+        }
+        @keyframes slideRight {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
     </style>
 </head>
 <body>
-    <div id="root"></div>
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+<div id="root"></div>
+<script type="text/babel">
+    const { useState, useEffect, useRef } = React;
 
-        const socket = io('http://localhost:4000', {
-            reconnection: true,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-            reconnectionAttempts: 5
-        });
+    // Helper to get socket url
+    const getSocketUrl = () => {
+        if (typeof window !== 'undefined') {
+            const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+            const host = window.location.hostname;
+            const port = 4000;
+            return `${protocol}//${host}:${port}`;
+        }
+        return 'http://localhost:4000';
+    };
 
-        function ChatPanel({ socket }) {
-            const [msg, setMsg] = useState('');
-            const [messages, setMessages] = useState([]);
-            const messagesEndRef = useRef(null);
+    const socket = io(getSocketUrl(), {
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        reconnectionAttempts: 5
+    });
 
-            const scrollToBottom = () => {
-                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-            };
+    // Normalize incoming URL string
+    const normalizeUrl = (input) => {
+        if (!input || !input.trim()) return '';
+        let url = input.trim();
 
-            useEffect(() => {
-                scrollToBottom();
-            }, [messages]);
-
-            useEffect(() => {
-                socket.on('chat-message', (m) => {
-                    setMessages(prev => [...prev, { ...m, timestamp: new Date().toLocaleTimeString() }]);
-                });
-                return () => socket.off('chat-message');
-            }, []);
-
-            const send = () => {
-                if (!msg.trim()) return;
-                socket.emit('chat-message', { text: msg });
-                setMessages(prev => [...prev, { text: msg, timestamp: new Date().toLocaleTimeString(), sent: true }]);
-                setMsg('');
-            };
-
-            const handleKeyPress = (e) => {
-                if (e.key === 'Enter') send();
-            };
-
-            return (
-                <div className="w-80 bg-zinc-900 border-l border-zinc-800 flex flex-col h-full">
-                    <div className="p-4 border-b border-zinc-800">
-                        <h3 className="text-white font-bold">Chat Room</h3>
-                    </div>
-                    <div className="flex-1 overflow-auto p-4 space-y-3">
-                        {messages.map((m, i) => (
-                            <div key={i} className="chat-message">
-                                <div className={`p-3 rounded-xl ${m.sent ? 'bg-cyan-600 ml-auto w-fit' : 'bg-zinc-800'}`}>
-                                    <p className="text-white text-sm break-words">{m.text}</p>
-                                    <p className="text-zinc-400 text-xs mt-1">{m.timestamp}</p>
-                                </div>
-                            </div>
-                        ))}
-                        <div ref={messagesEndRef} />
-                    </div>
-                    <div className="p-3 border-t border-zinc-800 flex gap-2">
-                        <input
-                            value={msg}
-                            onChange={(e) => setMsg(e.target.value)}
-                            onKeyPress={handleKeyPress}
-                            className="flex-1 bg-zinc-800 p-3 rounded-xl text-white placeholder-zinc-500"
-                            placeholder="Type message..."
-                        />
-                        <button
-                            onClick={send}
-                            className="bg-cyan-500 hover:bg-cyan-600 px-5 py-3 rounded-xl font-bold text-white transition"
-                        >
-                            Send
-                        </button>
-                    </div>
-                </div>
-            );
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+            return url;
         }
 
-        function MediaPanel({ socket, room }) {
-            const [url, setUrl] = useState('');
+        return 'https://' + url;
+    };
 
-            const detectType = (u) => {
-                if (u.includes('youtube.com') || u.includes('youtu.be')) return 'video';
-                if (u.endsWith('.pdf')) return 'pdf';
-                return 'website';
+    // Detect type of content by URL pattern
+    const detectType = (url) => {
+        const lower = url.toLowerCase();
+
+        // YouTube detection
+        if (lower.includes('youtube.com') || lower.includes('youtu.be')) {
+            let videoId = null;
+            if (lower.includes('youtu.be')) {
+                videoId = url.split('youtu.be/')[1]?.split('?')[0];
+            } else {
+                try {
+                    const urlObj = new URL(url);
+                    videoId = urlObj.searchParams.get('v');
+                } catch {
+                    videoId = null;
+                }
+            }
+            return { type: 'youtube', url, videoId };
+        }
+
+        // PDF detection
+        if (lower.endsWith('.pdf')) {
+            return { type: 'pdf', url };
+        }
+
+        // Video files detection
+        if (lower.match(/\.(mp4|webm|ogg|m3u8|m3u)$/)) {
+            return { type: 'video', url };
+        }
+
+        // Default website
+        return { type: 'website', url };
+    };
+
+    function VideoCallPanel({ room, name, onEndCall }) {
+        const [peers, setPeers] = useState({});
+        const [myStream, setMyStream] = useState(null);
+        const [audioEnabled, setAudioEnabled] = useState(true);
+        const [videoEnabled, setVideoEnabled] = useState(true);
+        const [screenSharing, setScreenSharing] = useState(false);
+        const myVideoRef = useRef();
+        const peerConnections = useRef({});
+        const peerInstance = useRef(null);
+
+        useEffect(() => {
+            const initPeer = async () => {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: true,
+                        audio: true,
+                    });
+                    setMyStream(stream);
+                    if (myVideoRef.current) {
+                        myVideoRef.current.srcObject = stream;
+                    }
+
+                    peerInstance.current = new Peer(undefined, {
+                        host: '0.peerjs.com',
+                        port: 443,
+                        path: '/',
+                        secure: true,
+                    });
+
+                    peerInstance.current.on('open', (id) => {
+                        socket.emit('join-video', { room, peerId: id, name });
+                    });
+
+                    peerInstance.current.on('call', (call) => {
+                        call.answer(stream);
+                        call.on('stream', (remoteStream) => {
+                            setPeers((prev) => ({
+                                ...prev,
+                                [call.peer]: { stream: remoteStream, name: call.metadata?.name || 'Unknown' },
+                            }));
+                            peerConnections.current[call.peer] = call;
+                        });
+                    });
+
+                    socket.on('user-connected', ({ peerId, name: userName }) => {
+                        const call = peerInstance.current.call(peerId, stream, {
+                            metadata: { name },
+                        });
+                        call.on('stream', (remoteStream) => {
+                            setPeers((prev) => ({
+                                ...prev,
+                                [peerId]: { stream: remoteStream, name: userName },
+                            }));
+                            peerConnections.current[peerId] = call;
+                        });
+                    });
+
+                    socket.on('user-disconnected', (peerId) => {
+                        if (peerConnections.current[peerId]) {
+                            peerConnections.current[peerId].close();
+                        }
+                        setPeers((prev) => {
+                            const updated = { ...prev };
+                            delete updated[peerId];
+                            return updated;
+                        });
+                    });
+                } catch (err) {
+                    console.error('Media access error:', err);
+                }
             };
 
-            const load = () => {
-                if (!url.trim()) return;
-                socket.emit('workspace-load', { room, object: { type: detectType(url), url } });
+            initPeer();
+
+            return () => {
+                if (myStream) {
+                    myStream.getTracks().forEach((track) => track.stop());
+                }
+                if (peerInstance.current) {
+                    peerInstance.current.destroy();
+                }
+            };
+        }, [room, name]);
+
+        const toggleAudio = () => {
+            if (myStream) {
+                myStream.getAudioTracks()[0].enabled = !audioEnabled;
+                setAudioEnabled(!audioEnabled);
+            }
+        };
+
+        const toggleVideo = () => {
+            if (myStream) {
+                myStream.getVideoTracks()[0].enabled = !videoEnabled;
+                setVideoEnabled(!videoEnabled);
+            }
+        };
+
+        const toggleScreenShare = async () => {
+            if (screenSharing) {
+                try {
+                    const videoTrack = await navigator.mediaDevices.getUserMedia({ video: true });
+                    const newVideoTrack = videoTrack.getVideoTracks()[0];
+                    const sender = myStream.getVideoTracks()[0];
+                    myStream.removeTrack(sender);
+                    sender.stop();
+                    myStream.addTrack(newVideoTrack);
+                    if (myVideoRef.current) {
+                        myVideoRef.current.srcObject = myStream;
+                    }
+                    setScreenSharing(false);
+                } catch (err) {
+                    console.error('Error returning to camera:', err);
+                }
+            } else {
+                try {
+                    const screenStream = await navigator.mediaDevices.getDisplayMedia({
+                        video: { cursor: "always" },
+                        audio: false,
+                    });
+                    const screenTrack = screenStream.getVideoTracks()[0];
+                    const sender = myStream.getVideoTracks()[0];
+                    myStream.removeTrack(sender);
+                    sender.stop();
+                    myStream.addTrack(screenTrack);
+                    if (myVideoRef.current) {
+                        myVideoRef.current.srcObject = myStream;
+                    }
+                    setScreenSharing(true);
+                    screenTrack.onended = () => toggleScreenShare();
+                } catch (err) {
+                    console.error('Screen share error:', err);
+                }
+            }
+        };
+
+        const handleEndCall = () => {
+            if (myStream) {
+                myStream.getTracks().forEach((track) => track.stop());
+            }
+            if (peerInstance.current) {
+                peerInstance.current.destroy();
+            }
+            onEndCall();
+        };
+
+        const peerCount = Object.keys(peers).length + 1;
+
+        return (
+            <div className="relative w-full h-full">
+                <div className={`video-grid count-${peerCount}`}>
+                    <div className="peer-video-container">
+                        <video ref={myVideoRef} autoPlay muted playsInline />
+                        <div className="peer-name">{name} (You)</div>
+                    </div>
+                    {Object.entries(peers).map(([peerId, peer]) => (
+                        <div key={peerId} className="peer-video-container">
+                            <video
+                                autoPlay
+                                playsInline
+                                ref={(el) => {
+                                    if (el && peer.stream) el.srcObject = peer.stream;
+                                }}
+                            />
+                            <div className="peer-name">{peer.name}</div>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="controls-bar">
+                    <button
+                        onClick={toggleAudio}
+                        className={`control-btn ${!audioEnabled ? 'active' : 'bg-slate-700'}`}
+                        title={audioEnabled ? 'Mute' : 'Unmute'}
+                    >
+                        {audioEnabled ? '🎤' : '🔇'}
+                    </button>
+                    <button
+                        onClick={toggleVideo}
+                        className={`control-btn ${!videoEnabled ? 'active' : 'bg-slate-700'}`}
+                        title={videoEnabled ? 'Stop Video' : 'Start Video'}
+                    >
+                        {videoEnabled ? '📹' : '🚫'}
+                    </button>
+                    <button
+                        onClick={toggleScreenShare}
+                        className={`control-btn ${screenSharing ? 'sharing' : 'bg-slate-700'}`}
+                        title={screenSharing ? 'Stop Sharing' : 'Share Screen'}
+                    >
+                        {screenSharing ? '🛑' : '📺'}
+                    </button>
+                    <button
+                        onClick={handleEndCall}
+                        className="control-btn bg-red-600 hover:bg-red-700"
+                        title="End Call"
+                    >
+                        📞
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    function ChatPanel({ socket, room }) {
+        const [msg, setMsg] = useState('');
+        const [messages, setMessages] = useState([]);
+        const messagesEndRef = useRef(null);
+
+        const scrollToBottom = () => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        };
+
+        useEffect(() => {
+            scrollToBottom();
+        }, [messages]);
+
+        useEffect(() => {
+            socket.on('chat-message', (m) => {
+                setMessages((prev) => [...prev, { ...m, timestamp: new Date().toLocaleTimeString() }]);
+            });
+            return () => socket.off('chat-message');
+        }, []);
+
+        const send = () => {
+            if (!msg.trim()) return;
+            socket.emit('chat-message', { text: msg, room });
+            setMessages((prev) => [...prev, { text: msg, timestamp: new Date().toLocaleTimeString(), sent: true }]);
+            setMsg('');
+        };
+
+        const handleKeyPress = (e) => {
+            if (e.key === 'Enter') send();
+        };
+
+        return (
+            <div className="w-80 bg-zinc-900 border-l border-zinc-800 flex flex-col h-full slide-right">
+                <div className="p-4 border-b border-zinc-800">
+                    <h3 className="text-white font-bold">Study Chat</h3>
+                </div>
+                <div className="flex-1 overflow-auto p-4 space-y-3">
+                    {messages.map((m, i) => (
+                        <div key={i} className="chat-message">
+                            <div className={`p-3 rounded-xl max-w-xs ${m.sent ? 'bg-cyan-600 ml-auto' : 'bg-zinc-800'}`}>
+                                <p className="text-white text-sm break-words">{m.text}</p>
+                                <p className="text-zinc-300 text-xs mt-1">{m.timestamp}</p>
+                            </div>
+                        </div>
+                    ))}
+                    <div ref={messagesEndRef} />
+                </div>
+                <div className="p-3 border-t border-zinc-800 flex gap-2">
+                    <input
+                        value={msg}
+                        onChange={(e) => setMsg(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        className="flex-1 bg-zinc-800 p-3 rounded-xl text-white placeholder-zinc-500"
+                        placeholder="Message..."
+                    />
+                    <button
+                        onClick={send}
+                        className="bg-cyan-500 hover:bg-cyan-600 px-5 rounded-xl font-bold text-white transition"
+                    >
+                        Send
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // Here is the key fix: pass onLoadObject to update state immediately after load action
+    function StreamPanel({ socket, room, onClose, onLoadObject }) {
+        const [url, setUrl] = useState('');
+        const [dragOver, setDragOver] = useState(false);
+
+        const load = () => {
+            if (!url.trim()) return;
+            const normalizedUrl = normalizeUrl(url);
+            const detected = detectType(normalizedUrl);
+            socket.emit('workspace-load', { room, object: detected });
+            setUrl('');
+            if (onLoadObject) onLoadObject({ current: detected });  // update local workspace immediately
+        };
+
+        // Handle dragging states
+        const handleDragOver = (e) => {
+            e.preventDefault();
+            setDragOver(true);
+        };
+
+        const handleDragLeave = () => {
+            setDragOver(false);
+        };
+
+        const handleDrop = (e) => {
+            e.preventDefault();
+            setDragOver(false);
+            const text = e.dataTransfer.getData('text/plain');
+            if (text) {
+                const normalizedUrl = normalizeUrl(text);
+                const detected = detectType(normalizedUrl);
+                socket.emit('workspace-load', { room, object: detected });
+                if (onLoadObject) onLoadObject({ current: detected });
                 setUrl('');
-            };
+                return;
+            }
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const file = files[0];
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const dataUrl = event.target.result;
+                    if (file.type.startsWith('video/')) {
+                        const detected = { type: 'video', url: dataUrl };
+                        socket.emit('workspace-load', { room, object: detected });
+                        if (onLoadObject) onLoadObject({ current: detected });
+                    } else if (file.type === 'application/pdf') {
+                        const detected = { type: 'pdf', url: dataUrl };
+                        socket.emit('workspace-load', { room, object: detected });
+                        if (onLoadObject) onLoadObject({ current: detected });
+                    }
+                };
+                reader.readAsDataURL(file);
+            }
+        };
 
-            const handleKeyPress = (e) => {
-                if (e.key === 'Enter') load();
-            };
+        const handleKeyPress = (e) => {
+            if (e.key === 'Enter') load();
+        };
 
-            return (
-                <div className="bg-zinc-900 border-t border-zinc-800 p-4 flex gap-3">
+        return (
+            <div className="bg-zinc-900 border-t border-zinc-800 p-4 fade-in">
+                <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-white font-bold text-sm">🎥 Stream Content</h3>
+                    <button
+                        onClick={onClose}
+                        className="text-zinc-400 hover:text-white text-xl"
+                    >
+                        ✕
+                    </button>
+                </div>
+                <div 
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className={`border-2 border-dashed rounded-lg p-3 mb-3 transition ${dragOver ? 'drag-over' : 'border-zinc-700'}`}
+                >
+                    <p className="text-zinc-500 text-xs text-center">Drag & drop files or links here</p>
+                </div>
+                <div className="flex gap-2">
                     <input
                         value={url}
                         onChange={(e) => setUrl(e.target.value)}
                         onKeyPress={handleKeyPress}
-                        placeholder="Paste website/YouTube/PDF link"
-                        className="flex-1 bg-zinc-800 rounded-xl p-3 text-white placeholder-zinc-500"
+                        placeholder="Type or paste URL (e.g., claude.ai, youtube.com/watch?v=...)"
+                        className="flex-1 bg-zinc-800 text-white rounded-xl p-3 placeholder-zinc-500 text-sm"
                     />
                     <button
                         onClick={load}
-                        className="bg-cyan-500 hover:bg-cyan-600 px-6 py-3 rounded-xl font-bold text-white transition"
+                        className="bg-cyan-500 hover:bg-cyan-600 px-6 rounded-xl font-bold text-white transition"
                     >
                         Load
                     </button>
                 </div>
-            );
-        }
+                <p className="text-zinc-600 text-xs mt-2">
+                    Supports: Websites, YouTube, IPTV (m3u8), video files, PDFs
+                </p>
+            </div>
+        );
+    }
 
-        function RoomBar({ room, connected }) {
-            return (
-                <div className="h-16 border-b border-zinc-800 bg-zinc-950 flex items-center justify-between px-5">
-                    <div className="text-2xl font-bold text-cyan-500">🦈 StudyShrk</div>
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                            <span className="text-xs text-zinc-400">{connected ? 'Connected' : 'Disconnected'}</span>
-                        </div>
-                        <div className="bg-zinc-800 px-4 py-2 rounded-xl text-sm font-mono tracking-widest text-zinc-400">
-                            ROOM: <span className="text-white font-bold">{room}</span>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
+    function Workspace({ state }) {
+        const iframeRef = useRef();
+        const videoRef = useRef();
 
-        function Workspace({ state }) {
-            const iframeRef = useRef();
-            const videoRef = useRef();
+        useEffect(() => {
+            if (!state?.current) return;
 
-            useEffect(() => {
-                if (!state?.current) return;
-                if (state.current.type === 'website') {
-                    iframeRef.current.src = state.current.url;
-                }
-                if (state.current.type === 'video') {
-                    videoRef.current.src = state.current.url;
-                }
-            }, [state]);
+            const { type, url, videoId } = state.current;
 
-            if (!state?.current) {
-                return (
-                    <div className="flex-1 flex items-center justify-center flex-col text-zinc-500 bg-zinc-950">
-                        <p className="text-2xl mb-2">📚</p>
-                        <p className="text-lg">Empty Workspace</p>
-                        <p className="text-sm mt-2">Load a website, video, or PDF from below</p>
-                    </div>
-                );
+            if (type === 'youtube' && iframeRef.current) {
+                iframeRef.current.src = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
             }
+            else if (type === 'website' && iframeRef.current) {
+                iframeRef.current.src = url;
+            }
+            else if (type === 'video' && videoRef.current) {
+                videoRef.current.src = url;
+            }
+            else if (type === 'pdf' && iframeRef.current) {
+                iframeRef.current.src = url;
+            }
+        }, [state]);
 
+        if (!state?.current) {
             return (
-                <div className="flex-1 relative overflow-hidden bg-zinc-950">
-                    {state.current.type === 'website' && (
-                        <iframe
-                            ref={iframeRef}
-                            className="w-full h-full border-none"
-                            title="workspace"
-                            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation"
-                        />
-                    )}
-                    {state.current.type === 'video' && (
-                        <video ref={videoRef} controls className="w-full h-full object-contain" />
-                    )}
-                    {state.current.type === 'pdf' && (
-                        <iframe className="w-full h-full" src={state.current.url} title="pdf" />
-                    )}
+                <div className="flex-1 flex items-center justify-center flex-col text-zinc-500 bg-zinc-950">
+                    <p className="text-4xl mb-2">📚</p>
+                    <p className="text-lg">Empty Workspace</p>
+                    <p className="text-sm mt-2">Click Stream to load content</p>
                 </div>
             );
         }
 
-        function App() {
-            const [room, setRoom] = useState('');
-            const [joined, setJoined] = useState(false);
-            const [name, setName] = useState('');
-            const [state, setState] = useState(null);
-            const [connected, setConnected] = useState(false);
+        const { type } = state.current;
 
-            useEffect(() => {
-                socket.on('connect', () => setConnected(true));
-                socket.on('disconnect', () => setConnected(false));
-                socket.on('room-state', (data) => setState(data));
-                socket.on('workspace-update', (data) => setState(data));
+        return (
+            <div className="flex-1 relative overflow-hidden bg-zinc-950">
+                {(type === 'website' || type === 'youtube' || type === 'pdf') && (
+                    <iframe
+                        ref={iframeRef}
+                        className="w-full h-full border-none"
+                        title="workspace"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                        allowFullScreen
+                    />
+                )}
+                {type === 'video' && (
+                    <video ref={videoRef} controls autoPlay className="w-full h-full object-contain" />
+                )}
+            </div>
+        );
+    }
 
-                return () => {
-                    socket.off('connect');
-                    socket.off('disconnect');
-                    socket.off('room-state');
-                    socket.off('workspace-update');
-                };
-            }, []);
+    function RoomBar({ room, name, onCopyCode, onShareWhatsApp }) {
+        const [showCopy, setShowCopy] = useState(false);
 
-            const joinRoom = () => {
-                if (!room.trim() || !name.trim()) {
-                    alert('Please enter both name and room code');
-                    return;
-                }
-                socket.emit('join-room', { room, name });
-                setJoined(true);
+        const copyToClipboard = () => {
+            navigator.clipboard.writeText(room);
+            setShowCopy(true);
+            setTimeout(() => setShowCopy(false), 2000);
+            if (onCopyCode) onCopyCode();
+        };
+
+        return (
+            <div className="h-16 border-b border-zinc-800 bg-zinc-950 flex items-center justify-between px-5">
+                <div className="text-2xl font-bold text-cyan-500">🦈 StudyShrk</div>
+                <div className="flex items-center gap-4">
+                    <div className="bg-zinc-800 px-4 py-2 rounded-xl text-sm font-mono tracking-widest text-zinc-400">
+                        ROOM: <span className="text-white font-bold">{room}</span>
+                    </div>
+                    <button
+                        onClick={copyToClipboard}
+                        className="bg-cyan-600 hover:bg-cyan-700 px-4 py-2 rounded-xl text-white text-sm font-bold transition"
+                    >
+                        {showCopy ? '✓ Copied' : 'Copy Code'}
+                    </button>
+                    <button
+                        onClick={onShareWhatsApp}
+                        className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-xl text-white text-sm font-bold transition"
+                    >
+                        💬 WhatsApp
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    function App() {
+        const [room, setRoom] = useState('');
+        const [joined, setJoined] = useState(false);
+        const [name, setName] = useState('');
+        const [state, setState] = useState(null);
+        const [connected, setConnected] = useState(false);
+        const [showVideoCall, setShowVideoCall] = useState(false);
+        const [showChat, setShowChat] = useState(false);
+        const [showStream, setShowStream] = useState(false);
+
+        useEffect(() => {
+            socket.on('connect', () => setConnected(true));
+            socket.on('disconnect', () => setConnected(false));
+            socket.on('room-state', (data) => setState(data));
+            socket.on('workspace-update', (data) => setState(data));
+
+            return () => {
+                socket.off('connect');
+                socket.off('disconnect');
+                socket.off('room-state');
+                socket.off('workspace-update');
             };
+        }, []);
 
-            const handleKeyPress = (e) => {
-                if (e.key === 'Enter') joinRoom();
-            };
+        const joinRoom = () => {
+            if (!room.trim() || !name.trim()) {
+                alert('Please enter both name and room code');
+                return;
+            }
+            socket.emit('join-room', { room, name });
+            setJoined(true);
+        };
 
-            if (!joined) {
-                return (
-                    <div className="min-h-screen bg-black flex items-center justify-center p-6">
-                        <div className="w-full max-w-md bg-zinc-900 rounded-3xl border border-zinc-800 p-8 space-y-6">
-                            <div className="text-center">
-                                <div className="text-5xl mb-3">🦈</div>
-                                <h1 className="text-4xl font-bold text-white">StudyShrk</h1>
-                                <p className="text-zinc-400 text-sm mt-2">Room Hosting & Video Calling</p>
-                            </div>
+        const handleKeyPress = (e) => {
+            if (e.key === 'Enter') joinRoom();
+        };
 
-                            <div className="space-y-4">
-                                <input
-                                    className="w-full bg-zinc-800 rounded-xl p-4 text-white placeholder-zinc-500 border border-zinc-700 focus:border-cyan-500 transition"
-                                    placeholder="Your name"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    onKeyPress={handleKeyPress}
-                                    autoFocus
-                                />
-                                <input
-                                    className="w-full bg-zinc-800 rounded-xl p-4 text-white placeholder-zinc-500 border border-zinc-700 focus:border-cyan-500 transition"
-                                    placeholder="Room code"
-                                    value={room}
-                                    onChange={(e) => setRoom(e.target.value)}
-                                    onKeyPress={handleKeyPress}
-                                />
-                                <button
-                                    onClick={joinRoom}
-                                    className="w-full bg-cyan-500 hover:bg-cyan-600 text-white p-4 rounded-xl font-bold transition"
-                                >
-                                    Join Workspace
-                                </button>
-                            </div>
+        const shareViaWhatsApp = () => {
+            const text = `Join my study room on StudyShrk: ${room}`;
+            window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`);
+        };
 
-                            <div className={`text-center text-xs p-3 rounded-lg ${connected ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
-                                {connected ? '✓ Connected to server' : '✗ Waiting for server (localhost:4000)'}
-                            </div>
+        const handleEndCall = () => {
+            setShowVideoCall(false);
+        };
+
+        if (!joined) {
+            return (
+                <div className="min-h-screen bg-black flex items-center justify-center p-6">
+                    <div className="w-full max-w-md bg-zinc-900 rounded-3xl border border-zinc-800 p-8 space-y-6">
+                        <div className="text-center">
+                            <div className="text-6xl mb-3">🦈</div>
+                            <h1 className="text-4xl font-bold text-white">StudyShrk</h1>
+                            <p className="text-zinc-400 text-sm mt-2">Study Together, Focus Better</p>
+                        </div>
+
+                        <div className="space-y-4">
+                            <input
+                                className="w-full bg-zinc-800 rounded-xl p-4 text-white placeholder-zinc-500 border border-zinc-700"
+                                placeholder="Your name"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                onKeyPress={handleKeyPress}
+                                autoFocus
+                            />
+                            <input
+                                className="w-full bg-zinc-800 rounded-xl p-4 text-white placeholder-zinc-500 border border-zinc-700"
+                                placeholder="Room code"
+                                value={room}
+                                onChange={(e) => setRoom(e.target.value)}
+                                onKeyPress={handleKeyPress}
+                            />
+                            <button
+                                onClick={joinRoom}
+                                className="w-full bg-cyan-500 hover:bg-cyan-600 text-white p-4 rounded-xl font-bold transition"
+                            >
+                                Join Study Session
+                            </button>
+                        </div>
+
+                        <div className={`text-center text-xs p-3 rounded-lg border ${connected ? 'bg-green-900/20 border-green-600 text-green-400' : 'bg-red-900/20 border-red-600 text-red-400'}`}>
+                            {connected ? '✓ Connected' : '✗ Connecting...'}
                         </div>
                     </div>
-                );
-            }
-
-            return (
-                <div className="h-screen bg-black text-white flex flex-col overflow-hidden">
-                    <RoomBar room={room} connected={connected} />
-                    <div className="flex flex-1 overflow-hidden">
-                        <Workspace state={state} />
-                        <ChatPanel socket={socket} />
-                    </div>
-                    <MediaPanel socket={socket} room={room} />
                 </div>
             );
         }
 
-        ReactDOM.render(<App />, document.getElementById('root'));
-    </script>
+        return (
+            <div className="h-screen bg-black text-white flex flex-col overflow-hidden">
+                <RoomBar 
+                    room={room} 
+                    name={name} 
+                    onShareWhatsApp={shareViaWhatsApp}
+                />
+
+                {/* Action Buttons Bar */}
+                <div className="bg-zinc-950 border-b border-zinc-800 px-5 py-3 flex items-center gap-3">
+                    <button
+                        onClick={() => setShowVideoCall(!showVideoCall)}
+                        className={`px-4 py-2 rounded-lg font-bold transition ${
+                            showVideoCall 
+                                ? 'bg-cyan-600 text-white' 
+                                : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                        }`}
+                    >
+                        📹 Video Call
+                    </button>
+                    <button
+                        onClick={() => setShowChat(!showChat)}
+                        className={`px-4 py-2 rounded-lg font-bold transition ${
+                            showChat 
+                                ? 'bg-cyan-600 text-white' 
+                                : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                        }`}
+                    >
+                        💬 Chat
+                    </button>
+                    <button
+                        onClick={() => setShowStream(!showStream)}
+                        className={`px-4 py-2 rounded-lg font-bold transition ${
+                            showStream 
+                                ? 'bg-cyan-600 text-white' 
+                                : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                        }`}
+                    >
+                        🎥 Stream
+                    </button>
+                </div>
+
+                <div className="flex flex-1 overflow-hidden">
+                    <div className="flex-1 flex flex-col">
+                        <div className="flex-1 flex">
+                            {showVideoCall && (
+                                <div className="flex-1 p-4">
+                                    <VideoCallPanel 
+                                        room={room} 
+                                        name={name} 
+                                        onEndCall={handleEndCall}
+                                    />
+                                </div>
+                            )}
+                            <div className={`${showVideoCall ? 'flex-1' : 'w-full'} flex flex-col ${showVideoCall ? 'border-l border-zinc-800' : ''}`}>
+                                <Workspace state={state} />
+                            </div>
+                        </div>
+                        {showStream && (
+                            <StreamPanel 
+                                socket={socket} 
+                                room={room} 
+                                onClose={() => setShowStream(false)}
+                                onLoadObject={(obj) => setState(obj)}  // Pass method to update workspace immediately
+                            />
+                        )}
+                    </div>
+                    {showChat && <ChatPanel socket={socket} room={room} />}
+                </div>
+            </div>
+        );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+</script>
 </body>
 </html>
